@@ -1,0 +1,346 @@
+<html>
+    <head>
+        <meta charset='UTF-8'/>
+        <title>Probability Distribution of Hydrogen Atom</title>
+        <link rel="stylesheet" type="text/css" href="./css/style.css">
+    </head>
+    <body>
+        <a href="https://github.com/cihadturhan/he-prob-density">
+            <img style="position: absolute; top: 0; left: 0; border: 0;" src="https://camo.githubusercontent.com/567c3a48d796e2fc06ea80409cc9dd82bf714434/68747470733a2f2f73332e616d617a6f6e6177732e636f6d2f6769746875622f726962626f6e732f666f726b6d655f6c6566745f6461726b626c75655f3132313632312e706e67" alt="Fork me on GitHub" data-canonical-src="https://s3.amazonaws.com/github/ribbons/forkme_left_darkblue_121621.png">
+        </a>
+        <p class="numParticles"></p>
+        <div class="explanation">
+            <h2>Probability density of a hydrogen atom </h2>
+            <h4>Use mouse drag to rotate, mouse wheel to zoom-in/out.</h4>
+        </div>
+        <a class="ref" href="http://en.wikipedia.org/wiki/File:Hydrogen_Density_Plots.png" target="_blank">See reference on Wikipedia</a>
+
+
+        <!-- THREE.min.js r60 and Orbit, GUI etc-->
+        <script type="text/javascript" src="js/THREE-r65.min.js"></script>
+        <script type="text/javascript" src="js/Stats.min.js"></script>
+        <script type="text/javascript" src="js/OrbitControls.js"></script>
+        <script type="text/javascript" src="js/dat.gui.min.js"></script>
+
+        <!--Mathematical Functions-->
+        <script type="text/javascript" src="js/MathLib/MathLib.js"></script>
+        <script type="text/javascript" src="js/MathLib/Complex.js"></script>
+        <script type="text/javascript" src="js/MathLib/Laguerre.js"></script>
+        <script type="text/javascript" src="js/MathLib/AssocLegendre.js"></script>
+        <script type="text/javascript" src="js/MathLib/SphericalHarmonic.js"></script>
+
+        <!-- ShaderParticles -->
+        <script type="text/javascript" src="js/ShaderParticleEngine/ShaderParticleUtils.js"></script>
+        <script type="text/javascript" src="js/ShaderParticleEngine/ShaderParticleGroup.js"></script>
+        <script type="text/javascript" src="js/ShaderParticleEngine/ShaderParticleEmitter.js"></script>
+
+
+        <script type="text/javascript">
+
+            gui = new dat.GUI();
+
+            parameters =
+                    {
+                        n: 2,
+                        l: 1,
+                        m: 0,
+                        size: 10,
+                        ppr: 60,
+                        ppa: 30
+                    };
+
+
+            var folder1 = gui.addFolder('Quantum numbers');
+            var folder2 = gui.addFolder('Resolution');
+
+            var guiN = folder1.add(parameters, 'n').min(1).max(10).step(1).listen();
+            var guiL = folder1.add(parameters, 'l').min(0).max(9).step(1).listen();
+            var guiM = folder1.add(parameters, 'm').min(-9).max(9).step(1).listen();
+            var guiSize = gui.add(parameters, 'size').min(1).max(30).step(1).name('Point Size').listen();
+            var guiPpr = folder2.add(parameters, 'ppr').min(10).max(100).step(1).name('Radial').listen();
+            var guiPpa = folder2.add(parameters, 'ppa').min(10).max(60).step(2).name('Angular').listen();
+            folder1.open();
+            folder2.open();
+
+            guiN.onChange(function(value)
+            {
+                guiL.max(value - 1);
+                ((guiL.getValue()) > value - 1) && guiL.setValue(value - 1);
+                update();
+
+            });
+            guiL.onChange(function(value)
+            {
+                guiM.max(value).min(-value);
+                (guiM.getValue() < -value) && guiM.setValue(-value);
+                (guiM.getValue() > value) && guiM.setValue(value);
+                update();
+            });
+
+            guiM.onChange(function(value) {
+                update();
+            });
+
+            guiSize.onChange(function(value) {
+                update();
+            });
+
+            guiPpr.onChange(function(value) {
+                update();
+            });
+
+            guiPpa.onChange(function(value) {
+                update();
+            });
+
+            gui.open();
+            timer = null;
+
+            function update() {
+                clearTimeout(timer);
+                timer = setTimeout(function() {
+                    scene.remove(particleGroup.mesh);
+                    initParticles();
+                }, 1000);
+            }
+
+
+            function Ψ(n, l, m) {
+                var a0 = 100; // bohr radius
+
+                this.n = n;
+                this.l = l;
+                this.m = m;
+                this.const = Math.sqrt(
+                        (2 / n / a0) * (2 / n / a0) * (2 / n / a0) *
+                        MathLib.factorial(n - l - 1) /
+                        (2 * this.n * MathLib.factorial(n + l))
+                        );
+                var opts = {
+                    lag: new Laguerre(n - l - 1, 2 * l + 1),
+                    shr: new SphericalHarmonic(l, m),
+                    eval: function(r, θ, φ) {
+                        return this.const * this.evalRad(r) * this.evalAng(θ, φ);
+                    },
+                    evalRad: function(r) {
+                        var ρ = 2 * r / (this.n * a0);
+                        return Math.abs(Math.exp(-ρ / 2) * Math.pow(ρ, this.l) * this.lag.eval(ρ));
+                    },
+                    evalAng: function(θ, φ) {
+                        return this.shr.eval(θ, φ).length();
+                    }
+                };
+                extend(this, opts);
+                return this;
+            }
+
+
+            function randBtw(a, b) {
+                return (b - a) * Math.random() + a;
+            }
+
+            function randBtwVect(v1, v2) {
+                return new THREE.Vector3(randBtw(v1.x, v2.x), randBtw(v1.y, v2.y), randBtw(v1.z, v2.z));
+            }
+
+            function resetGridParams() {
+                rmin = 2,
+                        rmax = Math.sqrt(parameters.n) * parameters.n * 300,
+                        incr = (rmax - rmin) / parameters.ppr;
+                tmin = 0,
+                        tmax = 2 * Math.PI + 0.01,
+                        tincr = tmax / parameters.ppa;
+                angular = [], radial = [];
+            }
+
+
+            function createAngularGrid() {
+                angular = [];
+                angular = AntipodalPointSet(parameters.ppa * parameters.ppa);
+            }
+
+            function createRadialGrid() {
+
+                radial = [];
+                var index = 0;
+
+                for (var r = rmin; r < rmax; r += incr) {
+                    radial[index++] = r;
+                }
+            }
+
+            function AntipodalPointSet(K2) {
+// Ref. http://dx.doi.org/10.1016/j.jocs.2011.06.007 
+                var K = K2 / 2;
+                var PI = Math.PI;
+                var n = Math.round(Math.sqrt(K * PI / 8.0));
+                var sc = new Array(K);
+                var L = PI / Math.sin(PI / (4.0 * n));
+                var phi, theta, k;
+                var sum = 0;
+                var index = 0;
+                for (var i = 1; i < n; i++) {
+
+                    phi = (i - 0.5) * 0.5 * PI / n;
+                    k = Math.round(2.0 * PI * Math.sin(phi) * K / L);
+                    sum += k;
+
+                    for (var j = 1; j <= k; j++) {
+                        theta = (j - 0.5) * 2.0 * PI / k;
+                        sc[index] = new THREE.Vector2(theta, PI / 2 - phi);
+                        index++;
+                    }
+                }
+
+                phi = (n - 0.5) * 0.5 * PI / n;
+                k = K - sum;
+
+                for (var j = 1; j <= k; j++) {
+                    theta = (j - 0.5) * 2.0 * PI / k;
+                    sc[index] = new THREE.Vector2(theta, PI / 2 - phi);
+                    index++;
+                }
+
+                for (var k = 0; k < K; k++) {
+                    sc[index] = new THREE.Vector2(sc[K - k - 1].x, PI + sc[K - k - 1].y);
+                    index++;
+                }
+
+                return sc;
+            }
+
+
+
+// variables used in init()
+            var scene, camera, renderer, clock;
+// Used in initParticles()
+            var emitter, particleGroup, numEmitters = 1;
+// Setup the scene
+            function init() {
+                scene = new THREE.Scene();
+                camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 100000);
+
+                camera.lookAt(scene.position);
+                renderer = new THREE.WebGLRenderer();
+                renderer.setSize(window.innerWidth, window.innerHeight);
+                renderer.setClearColor(0x000000);
+                clock = new THREE.Clock();
+                document.body.appendChild(renderer.domElement);
+            }
+
+            function getRandomNumber(base) {
+                return base * Math.random() - (base / 2);
+            }
+
+// Create particle group and emitter
+            function initParticles() {
+                resetGridParams();
+                createAngularGrid();
+                createRadialGrid();
+
+                particleGroup = new SPE.Group({
+                    texture: THREE.ImageUtils.loadTexture('./img/particle3.png'),
+                    maxAge: 2
+                });
+                for (var i = 0; i < numEmitters; ++i) {
+                    emitter = new SPE.Emitter({
+                        type: 'function',
+                        func: new Ψ(parameters.n, parameters.l, parameters.m), //n,l,m
+                        increment: incr,
+                        sizeStart: parameters.size,
+                        particleCount: Math.floor((rmax - rmin) / incr) * Math.floor((tmax - tmin) / tincr) * Math.floor((tmax - tmin) / tincr),
+                        colorStartSpread: new THREE.Vector3(1, 1, 1),
+                        opacityStart: 1,
+                        opacityEnd: 0,
+                        isStatic: 1
+                    });
+                    emitter.tincr = tincr;
+                    particleGroup.updateEmitter(emitter);
+                }
+
+                scene.add(particleGroup.mesh);
+            }
+
+            function initAxes() {
+                function buildAxes(length) {
+                    var axes = new THREE.Object3D();
+
+                    axes.add(buildAxis(new THREE.Vector3(0, 0, 0), new THREE.Vector3(length, 0, 0), 0xEE5555, false)); // +X
+                    axes.add(buildAxis(new THREE.Vector3(0, 0, 0), new THREE.Vector3(-length, 0, 0), 0xEE5555, true)); // -X
+                    axes.add(buildAxis(new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, length, 0), 0x55EE55, false)); // +Y
+                    axes.add(buildAxis(new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, -length, 0), 0x55EE55, true)); // -Y
+                    axes.add(buildAxis(new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, length), 0x5555EE, false)); // +Z
+                    axes.add(buildAxis(new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, -length), 0x5555EE, true)); // -Z
+
+                    return axes;
+
+                }
+
+                function buildAxis(src, dst, colorHex, dashed) {
+                    var geom = new THREE.Geometry(),
+                            mat;
+
+                    if (dashed) {
+                        mat = new THREE.LineDashedMaterial({linewidth: 3, color: colorHex, dashSize: 50, gapSize: 50});
+                    } else {
+                        mat = new THREE.LineBasicMaterial({linewidth: 3, color: colorHex});
+                    }
+
+                    geom.vertices.push(src.clone());
+                    geom.vertices.push(dst.clone());
+                    geom.computeLineDistances(); // This one is SUPER important, otherwise dashed lines will appear as simple plain lines
+
+                    var axis = new THREE.Line(geom, mat, THREE.LinePieces);
+
+                    return axis;
+                }
+
+                var axes = buildAxes(10000);
+                scene.add(axes);
+            }
+
+            function setCount(count) {
+                document.querySelector('.numParticles').textContent = 'Total particles: ' + count;
+            }
+
+            function animate() {
+                requestAnimationFrame(animate);
+                // Using a fixed time-step here to avoid pauses
+                render(clock.getDelta());
+            }
+
+
+            function render(dt) {
+                //particleGroup.tick(dt);
+                renderer.render(scene, camera);
+            }
+
+
+            SPE.ready(function() {
+                init();
+                initParticles();
+                initAxes();
+                animate();
+
+                controls = new THREE.OrbitControls(camera, renderer.domElement);
+                camera.position.z = rmax * 2.5;
+                camera.position.y = 0;
+                camera.position.x = 0;
+                controls.addEventListener('change', render);
+
+                window.addEventListener('resize', function() {
+                    var w = window.innerWidth,
+                            h = window.innerHeight;
+                    camera.aspect = w / h;
+                    camera.updateProjectionMatrix();
+                    renderer.setSize(w, h);
+                }, false);
+
+            }
+            );
+
+
+        </script>
+
+    </body>
+</html>
