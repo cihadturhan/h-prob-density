@@ -64,4 +64,5 @@ p.small {
 
 #github-link{
     z-index: 100;
+    position: absolute;
 }
