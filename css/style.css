@@ -61,3 +61,7 @@ p.small {
     padding: 5px;
     color: rgb(235, 235, 235);
 }
+
+#github-link{
+    z-index: 100;
+}
